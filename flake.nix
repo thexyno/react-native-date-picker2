@@ -1,10 +1,14 @@
 {
-  description = "A simple Go package";
+  description = "A simple poetry package";
 
   # Nixpkgs / NixOS version to use.
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { self, nixpkgs }:
+  inputs.poetry2nix = {
+    url = "github:nix-community/poetry2nix";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+  outputs = { self, nixpkgs, poetry2nix }:
     let
 
       # to work with older version of flakes
@@ -24,6 +28,43 @@
 
     in
     {
+      packages = forAllSystems (system:
+        let
+          pkgs = nixpkgsFor.${system};
+          inherit (poetry2nix.lib.mkPoetry2Nix { inherit pkgs; }) mkPoetryApplication;
+        in
+        {
+          default =
+            mkPoetryApplication {
+              projectDir = ./.;
+            };
+        });
+      container = forAllSystems (system:
+        let
+          pkgs = nixpkgsFor.${system};
+          app = self.packages.${system}.default;
+        in
+        pkgs.dockerTools.buildImage {
+          name = "AuthIsNotEasy";
+          tag = "latest";
+          copyToRoot = pkgs.buildEnv {
+            name = "image-root";
+            paths = [ app ];
+            pathsToLink = [ "/bin" ];
+          };
+
+          runAsRoot = ''
+            #!${pkgs.runtimeShell}
+          '';
+
+          config = {
+            Cmd = [ "/bin/webctfchallenge" ];
+            WorkingDir = "/";
+          };
+
+
+        }
+      );
       devShell = forAllSystems (system:
         let pkgs = nixpkgsFor.${system}; in
         (pkgs.mkShell {
